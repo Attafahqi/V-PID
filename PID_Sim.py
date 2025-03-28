@@ -28,8 +28,8 @@ import Asset.Resource
 
 s = symbols('s') 
 
-Firebase_URL = "https://root-locus-controller-default-rtdb.asia-southeast1.firebasedatabase.app/" ## Fill it by Firebase URL
-ADMIN_NPM = "2206029891" ## Custom it by your secret number to access student grades
+Firebase_URL = "" ## Fill it by Firebase URL
+ADMIN_NPM = "" ## Custom it by your secret number to access student grades
 
 class HoverButton(QPushButton):
     def __init__(self, *args, **kwargs):

@@ -10,9 +10,10 @@ import subprocess
 import sys
 import json
 import requests
+import hashlib
 from PyQt5.QtWidgets import QMainWindow, QApplication, QMessageBox, QPushButton, QGraphicsDropShadowEffect
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QCursor, QColor, QIcon
 import sympy as sp
 from sympy import symbols, expand
@@ -30,6 +31,7 @@ s = symbols('s')
 
 Firebase_URL = "" ## Fill it by Firebase URL
 ADMIN_NPM = "" ## Custom it by your secret number to access student grades
+Total_Student = ## Custom it by your total student in the class
 
 class HoverButton(QPushButton):
     def __init__(self, *args, **kwargs):
@@ -83,8 +85,75 @@ class Login(QMainWindow):
         self.setWindowIcon(QIcon("Asset/Logo Control.png"))
         self.show()
 
+        self.Nama.setFocusPolicy(Qt.ClickFocus)
         self.NPM.setFocusPolicy(Qt.ClickFocus)
         self.Login.clicked.connect(self.login)
+
+    def is_valid_npm(self, npm):
+        return npm.isdigit() and len(npm) >= 10
+
+    def login(self):
+        Nama = self.Nama.text().strip()
+        NPM = self.NPM.text().strip()
+
+        if NPM == ADMIN_NPM:
+            self.main_window = Leaderboard()
+            self.main_window.show()
+            self.close()
+            return
+        
+        if not Nama:
+            QMessageBox.warning(self, "Login Failed", "Please enter your name!")
+            return
+    
+        if not self.is_valid_npm(NPM):
+            QMessageBox.warning(self, "Login Failed", "NPM must be at least 10 digits and contain only numbers!")
+            return
+
+        self.main_window = Main(NPM, Nama)
+        self.main_window.show()
+        self.close()
+
+class Leaderboard(QMainWindow):
+    def __init__(self):
+        super(Leaderboard, self).__init__()
+        screen = QApplication.primaryScreen()
+        screen_rect = screen.geometry()
+        screen_width = screen_rect.width()
+        screen_height = screen_rect.height()
+        ui_file = "ui/Leaderboard.ui" if screen_width >= 1920 and screen_height >= 1080 else "ui/LeaderboardNoHD.ui"
+        uic.loadUi(ui_file, self)
+        self.setWindowTitle("Root Locus Controller Design")
+        self.setWindowIcon(QIcon("Asset/Logo Control.png"))
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.last_data_snapshot = None
+        self.auto_grade(Firebase_URL, "Hasil/graded_results.csv")
+        self.start_auto_update(firebase_url=Firebase_URL, output_csv="Hasil/graded_results.csv")
+        self.show()
+
+    def start_auto_update(self, firebase_url, output_csv):
+        self.timer = QTimer()
+        self.timer.timeout.connect(lambda: self.check_and_update(firebase_url, output_csv))
+        self.timer.start(5000)  # Cek setiap 5 detik
+
+    def check_and_update(self, firebase_url, output_csv):
+        try:
+            response = requests.get(f'{firebase_url}.json')
+            response.raise_for_status()
+            new_data = response.json()
+        except requests.exceptions.RequestException:
+            return  # Abaikan jika error
+
+        if self.data_changed(new_data):
+            self.last_data_snapshot = new_data
+            self.auto_grade(firebase_url, output_csv)
+
+    def data_changed(self, new_data):
+        if self.last_data_snapshot is None:
+            return True
+        old_hash = hashlib.md5(json.dumps(self.last_data_snapshot, sort_keys=True).encode()).hexdigest()
+        new_hash = hashlib.md5(json.dumps(new_data, sort_keys=True).encode()).hexdigest()
+        return old_hash != new_hash
 
     def auto_grade(self, firebase_url, output_csv):
         try:
@@ -99,11 +168,10 @@ class Login(QMainWindow):
             QMessageBox.warning(self, "Warning", "No data found in Firebase!")
             return
 
-        # Memproses data
         extracted_data = []
         for id_number, details in data.items():
             if isinstance(details, dict) and "Avg error" in details:
-                extracted_data.append({"NPM": id_number, "Avg error": details["Avg error"]})
+                extracted_data.append({"NPM": id_number, "Avg error": details["Avg error"], "Nama": details["Nama"]})
 
         if not extracted_data:
             QMessageBox.warning(self, "Warning", "No valid data found in Firebase!")
@@ -119,38 +187,104 @@ class Login(QMainWindow):
 
         min_error = df["Avg error"].min()
         max_error = df["Avg error"].max()
-
         if min_error == max_error:
             df["Grade"] = 100
         else:
             df["Grade"] = 60 + (40 * np.exp(-2 * (df["Avg error"] - min_error) / (max_error - min_error)))
-
         df["Grade"] = df["Grade"].round(2)
         df[["NPM", "Grade"]].to_csv(output_csv, index=False)
-        QMessageBox.information(self, "Grading Done", f"Graded results saved to {output_csv}")
-        subprocess.Popen(["notepad.exe", output_csv])
 
-    def is_valid_npm(self, npm):
-        return npm.isdigit() and len(npm) >= 10
+        # --- GRAFIK LEADERBOARD TOP 10 ---
+        top10 = df.sort_values("Grade", ascending=False).head(10).reset_index(drop=True)
+        colors = ['gold', 'silver', '#cd7f32'] + ['white'] * 7
+        scales = [1.3, 1.2, 1.1] + [1.0] * 7
+        top10 = top10[::-1].reset_index(drop=True)
+        colors = colors[::-1]
+        scales = scales[::-1]
 
-    def login(self):
-        NPM = self.NPM.text().strip()
+        plt.figure(figsize=(13, 8.3), facecolor='none')
+        spacing = 0.3
+        y_positions = []
+        current_y = 0
+        for scale in scales:
+            y_positions.append(current_y)
+            current_y += scale + spacing
 
-        if NPM == ADMIN_NPM:
-            self.auto_grade(Firebase_URL, "graded_results.csv")
-            QApplication.quit()
-            return
+        bars = []
+        for i in range(len(top10)):
+            bar = plt.barh(
+                y=y_positions[i],
+                width=top10["Grade"].iloc[i] - 90,
+                height=scales[i],
+                left=90 + 0.2,
+                color=colors[i]
+            )
+            bars.append(bar[0])
 
-        if not self.is_valid_npm(NPM):
-            QMessageBox.warning(self, "Login Failed", "NPM must be at least 10 digits and contain only numbers!")
-            return
+        plt.ylim(-0.5, current_y)
+        plt.xlim(90, 100)
+        ax = plt.gca()
+        ax.set_facecolor('none')
+        for spine in ['top', 'right', 'bottom']:
+            ax.spines[spine].set_visible(False)
+        ax.spines['left'].set_color('white')
+        ax.spines['left'].set_linewidth(5)
+        plt.xticks([])
+        plt.yticks([])
 
-        self.main_window = Main(NPM)
-        self.main_window.show()
-        self.close()
+        for i, bar in enumerate(bars):
+            width = bar.get_width()
+            y_center = bar.get_y() + bar.get_height() / 2
+            Nama = top10["Nama"].iloc[i]
+            grade = top10["Grade"].iloc[i]
+            color = 'white' if (9 - i) < 3 else 'black'
+            font_scale = scales[i]
+            plt.text(90 + 0.2 + width - 0.3, y_center,
+                     f'{Nama} - {grade:.2f}',
+                     va='center', ha='right',
+                     color=color, fontsize=10 * font_scale,
+                     fontweight='bold')
+
+        plt.tight_layout()
+        plt.savefig("Hasil/top10_grades.png", transparent=True)
+
+        # --- DONUT CHART: PERSENTASE SUBMIT ---
+        submitted = len(df)
+        not_submitted = max(Total_Student - submitted, 0)
+        percent = (submitted / Total_Student) * 100
+        labels = ['Submitted', 'Not Submitted']
+        sizes = [submitted, not_submitted]
+        colors = ['white', (0, 0, 0, 0.2)]
+
+        fig, ax = plt.subplots(figsize=(6, 6), facecolor='none')
+        wedges, _ = ax.pie(
+            sizes,
+            labels=None,
+            startangle=90,
+            counterclock=False,
+            colors=colors,
+            wedgeprops=dict(width=0.3, edgecolor='white')
+        )
+
+        ax.text(0, 0, f"{percent:.1f}%",
+                color='white',
+                fontsize=50,
+                fontweight='bold',
+                ha='center',
+                va='center')
+
+        ax.set_facecolor('none')
+        plt.setp(wedges, linewidth=0)
+        plt.tight_layout()
+        plt.savefig("Hasil/submission_donut.png", transparent=True)
+
+        self.Donut.setStyleSheet(f"border-image: url(Hasil/submission_donut.png);")
+        self.Donut.repaint()
+        self.TopTen.setStyleSheet(f"border-image: url(Hasil/top10_grades.png);")
+        self.TopTen.repaint()
 
 class Main(QMainWindow):
-    def __init__(self, NPM):
+    def __init__(self, NPM, Nama):
         super(Main, self).__init__()
         
         screen = QApplication.primaryScreen()
@@ -167,6 +301,7 @@ class Main(QMainWindow):
         self.setWindowIcon(QIcon("Asset/Logo Control.png"))
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.NPM = NPM
+        self.Nama = Nama
         self.replace_buttons()
 
         self.Kp = 1
@@ -208,6 +343,17 @@ class Main(QMainWindow):
         self.show()
 
     def trueValue(self):
+        reply = QMessageBox.question(
+            self,
+            "Confirmation",
+            f"Are you sure you want to submit this parameter?\nKp: {self.Kp}, Ki: {self.Ki}, Kd: {self.Kd}",
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Yes  # Default button
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+        
         s = sp.Symbol('s')
 
         numerator_expanded = sp.expand(self.num)
@@ -321,6 +467,7 @@ class Main(QMainWindow):
             "Ki error": float(error_Ki.evalf()) if isinstance(error_Ki, sp.Float) else float(error_Ki),
             "Kd error": float(error_Kd.evalf()) if isinstance(error_Kd, sp.Float) else float(error_Kd),
             "Avg error": float(error.evalf()) if isinstance(error, sp.Float) else float(error),
+            "Nama": self.Nama 
         }
 
         response = requests.put(url, data=json.dumps(payload))
@@ -480,6 +627,7 @@ class PID(QMainWindow):
         uic.loadUi("ui/PIDparam.ui", self)
         self.setWindowIcon(QIcon("Asset/Logo Control.png"))
         self.setWindowTitle("PID Parameter")
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
         self.main_window = main_window
 
@@ -513,6 +661,7 @@ class References(QMainWindow):
         uic.loadUi("ui/ReferencePoint.ui", self)
         self.setWindowIcon(QIcon("Asset/Logo Control.png"))
         self.setWindowTitle("Reference Point")
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
         self.main_window = main_window
 
@@ -543,6 +692,7 @@ class TransferFunction(QMainWindow):
         uic.loadUi("ui/TransferFunction.ui", self)
         self.setWindowIcon(QIcon("Asset/Logo Control.png"))
         self.setWindowTitle("System Transfer Function")
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
         self.main_window = main_window
 

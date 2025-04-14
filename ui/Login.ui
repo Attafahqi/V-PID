@@ -32,6 +32,46 @@
      </widget>
     </item>
     <item>
+     <widget class="QLineEdit" name="Nama">
+      <property name="styleSheet">
+       <string notr="true">background-color:rgba(0, 0, 0, 0);
+border:none;
+color:rgb(255, 255, 255);
+border-bottom: 2px solid rgba(255, 255, 255, 100);
+padding-bottom:7px;
+font-size: 15px;
+font-family: &quot;SF Pro Display&quot;; 
+	font-weight: bold; 
+    font-style: normal;</string>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
+      <property name="placeholderText">
+       <string>Enter Your Name</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <spacer name="verticalSpacer">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
+      </property>
+      <property name="sizeType">
+       <enum>QSizePolicy::Maximum</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>20</width>
+        <height>5</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
+    <item>
      <widget class="QLineEdit" name="NPM">
       <property name="styleSheet">
        <string notr="true">background-color:rgba(0, 0, 0, 0);
@@ -123,6 +163,8 @@ font-family: &quot;SF Pro Display&quot;;
    <zorder>verticalSpacer_2</zorder>
    <zorder>NPM</zorder>
    <zorder>verticalSpacer_3</zorder>
+   <zorder>Nama</zorder>
+   <zorder>verticalSpacer</zorder>
   </widget>
  </widget>
  <resources>
